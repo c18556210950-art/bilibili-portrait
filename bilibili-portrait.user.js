@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站 · 手机竖屏网页版
 // @namespace    local.bilibili.portrait
-// @version      1.6.1
+// @version      1.6.2
 // @description  手机竖屏浏览 B 站，适配首页、空间、热门分区、图文、历史动态、番剧影视和课程，补充直播消息等独立站点布局。
 // @match        https://www.bilibili.com/*
 // @match        https://search.bilibili.com/*
@@ -965,15 +965,6 @@
     html.bpm-active[data-bpm-page="reader"] .article-item__title { font-size: 16px !important; white-space: normal !important; line-height: 1.5 !important; }
     html.bpm-active[data-bpm-page="reader"] .article-item__meta { flex-wrap: wrap !important; gap: 6px !important; }
 
-    /* 横屏手机给右侧工具栏留位；短视口同时限制最小宽度，避免竖屏软键盘误触发。 */
-    @media (orientation: landscape) and (min-width: 480px) and (max-height: 600px) {
-      html.bpm-active { --bpm-rail-space: calc(76px + env(safe-area-inset-right, 0px)); }
-      html.bpm-active:not([data-bpm-fullscreen]) body {
-        box-sizing: border-box !important;
-        padding-right: var(--bpm-rail-space) !important;
-        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-      }
-    }
     html.bpm-active[data-bpm-fullscreen] #${HOST_ID} { display: none !important; }
     @media (prefers-reduced-motion: reduce) {
       html.bpm-active { scroll-behavior: auto !important; }
@@ -988,7 +979,18 @@
     try { GM_setValue(KEY, { ...settings }); } catch { showToast('设置未能保存，本页仍可使用'); }
   }
 
+  function isLandscape() {
+    // 手机优先读取物理方向，避免竖屏弹出键盘后误判；桌面窄窗口按视口方向。
+    const touch = navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
+    if (touch) {
+      if (screen.orientation?.type) return screen.orientation.type.startsWith('landscape');
+      if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90;
+    }
+    return window.innerWidth >= 480 && matchMedia('(orientation: landscape)').matches;
+  }
+
   function wantsMobile() {
+    if (isLandscape()) return false;
     if (settings.mode !== 'auto') return settings.mode === 'on';
     // “桌面版网站”的初始布局视口可能为 980px，另用触屏与实际屏幕检测。
     const phone = (navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches)
@@ -1323,6 +1325,7 @@
 
   function updatePlayback() {
     if (!ui) return;
+    host.hidden = isLandscape();
     ui.querySelector('[data-action="play"]').textContent = video && !video.paused ? '暂停' : '播放';
     ui.querySelector('[name="speed"]').value = String(video?.playbackRate ?? settings.speed);
     for (const button of ui.querySelectorAll('[data-needs-video]')) button.disabled = !video;
@@ -1371,7 +1374,7 @@
           color: #1f2937; font-size: 14px; line-height: 1.5; pointer-events: none;
           color-scheme: light; }
         * { box-sizing: border-box; }
-        [hidden] { display: none !important; }
+        :host([hidden]), [hidden] { display: none !important; }
         .search-backdrop { pointer-events: auto; position: fixed; inset: 0; background: #0006; z-index: -1; }
         .pull-indicator { position: fixed; top: env(safe-area-inset-top, 0px); left: 50%; margin-left: -52px;
           min-width: 104px; padding: 8px 12px; border-radius: 20px; background: #fff; color: #007ba8;
@@ -1412,22 +1415,6 @@
           padding: 10px 14px; border-radius: 12px; color: #fff; background: #1f2937ee; text-align: center; }
         .restore { pointer-events: auto; position: absolute; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           background: #00a1d6; color: #fff; box-shadow: 0 3px 16px #0002; }
-        @media (orientation: landscape) and (min-width: 480px) and (max-height: 600px) {
-          :host { inset: 0 0 0 auto; width: calc(76px + env(safe-area-inset-right, 0px));
-            display: flex; flex-direction: column; justify-content: center; }
-          .dock { width: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(4, minmax(44px, auto));
-            padding: 8px calc(8px + env(safe-area-inset-right, 0px)) 8px 8px;
-            border-top: 0; border-left: 1px solid #e5e7eb; border-radius: 14px 0 0 14px;
-            box-shadow: -3px 0 18px #0000000a; }
-          .dock > * { padding: 8px 4px; min-width: 0; }
-          .sheet, form { position: absolute; right: calc(100% + 8px); bottom: max(12px, env(safe-area-inset-bottom, 0px));
-            width: min(540px, calc(100vw - 100px - env(safe-area-inset-right, 0px) - env(safe-area-inset-left, 0px)));
-            max-width: none; margin: 0; border-radius: 14px;
-            max-height: calc(100vh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-            max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
-          .toast { position: absolute; right: calc(100% + 8px); top: 12px; margin: 0;
-            max-width: calc(100vw - 100px - env(safe-area-inset-right, 0px)); }
-        }
         @media (prefers-color-scheme: dark) {
           :host { color: #e5e7eb; color-scheme: dark; }
           .dock, .sheet, form { background: #17212f; border-color: #334155; }
@@ -1614,6 +1601,7 @@
   document.addEventListener('webkitfullscreenchange', syncFullscreen);
   window.addEventListener('resize', schedule, { passive: true });
   window.addEventListener('orientationchange', schedule, { passive: true });
+  screen.orientation?.addEventListener?.('change', schedule);
   window.addEventListener('popstate', schedule);
   window.addEventListener('hashchange', schedule);
   document.addEventListener('focusin', syncHeader);
